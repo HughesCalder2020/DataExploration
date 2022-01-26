@@ -1,0 +1,164 @@
+---
+title: "Exploratory analysis of forward skaters in the NHL skaters dataset"
+output:
+  pdf_document: default
+  html_notebook: default
+  html_document:
+    df_print: paged
+---
+This is a notebook describing my exploratory analysis using techniqeus learned from **Practical Statistics for Data Scientists** written by **Peter Bruce & Andrew Bruce**, as well as code based on understanding from the legend **Andy Field** and his textbook **Discovering Statistics using R**. 
+
+Below, we are just running some code to load the packages. The code I took from a **LindkedIn Learning** course. It loads the packages **datasets**, **pacman**, **rio**, **tidyverse**, **matrixStats**, and **wesanderson**.
+
+```{r}
+pacman::p_load(datasets, pacman, rio, tidyverse, matrixStats, wesanderson, hexbin, psych, pastecs)
+```
+Now we will load the **skaters** dataset that I got off of Reddit. Obviously the file location will vary depending on where you saved it. For me personally, I just use the folder function to import the data.
+```{r}
+load("~/Desktop/UoB/pip_r_files/Imported data/skaters.rda")
+```
+We're not yet done with managing the **skaters** dataset; there's still one glaring issue. If we attempt to analyse offensive and defensive metrics for all players in the dataset, our data will be **biased**. This is because of the inclusion of defensemen in the dataset. Defensemen will often score **less points**, have a **greater time on ice** and have **better defensive metrics** than offensive skaters. Therefore, we have to create two datasets: one with only defensemen **(defmen)**, and without any defensemen **(offmen)**. We could go further and separate wingers from centremen, but as we see below, the distribution of points amongst the three are pretty similar.
+Also, we'll just separate the **Vancouver Canucks** into their own separate database just in case we want to do some deep diving into their performance.
+```{r}
+
+offmen <- subset(skaters, position == "R"| position == "L" | position == "C")
+canuck <- subset(skaters, team == "VAN" | team2 == "VAN" | team3 == "VAN")
+defmen <- skaters %>%
+              filter( position == "D" |
+                        !position == "D" & position2 == "D" |
+                        !position == "D" & !position2 == "D" & position3 == "D" )
+```
+
+```{r}
+stat.desc(defmen, basic = TRUE, norm = TRUE)
+defmenHist <- ggplot(defmen, aes())
+```
+
+
+Now, we are going to explore some means for some features. Other than mean, which is simply the average, we will also look at **trimmed means** and **weighted means** (maybe). Looking at **Estimates of Location**, which looks at median and means
+```{r}
+mean(offmen[["p"]])
+```
+Below, we calculate the mean, but instead we **trim** the highest and lowest 12.5% of values to reduce the impact of extreme values on the dataset
+```{r}
+mean(offmen[["p"]], trim=0.125)
+```
+Below, the code is calculating the median value of points amongst the data set
+```{r}
+median(offmen[["p"]])
+```
+Below, we weight each player's points value with the number of games that they play. You'll notice that we could also use time on ice, and probably should.
+```{r}
+
+weighted.mean(offmen[["p"]], w=offmen[["gp"]])
+```
+Below, we spice things up with an external R package ***matrixStats**. This package contains the **weightedMedian** package
+```{r}
+weightedMedian(offmen[["p"]], w=weighted.gp)
+```
+Now let's move on to **Estimates of Variability**. This looks at the dataset as a whole, an looks at variability. This looks at things at things like standard deviation, interquartile range and median absolute deviation.
+```{r}
+sd(offmen[["p"]])
+mad(offmen[["p"]])
+```
+For interquartile range, I'm gonna go more in depth with a boxplot graph in addition, because its more of a visual indicator. First, we indicate interquartile range (IQR) for the offmen dataset as a whole. Then, we do a breakdown of percentiles for this dataset (which also has the .25 and .75 percentile). Then we do one final boxplot to bring all this information together.
+```{r}
+IQR(offmen[["p"]])
+quantile(offmen[["p"]], p=c(.05, .1, .25, .5, .75, .9, .95))
+ggplot(offmen, aes(y=p)) +
+  geom_boxplot()
+```
+Below, we're gonna look at some **ggplot2 graphs** to explore the point distribution in the nhl. Now, this is a graph using two continuous variables: games played and points. One intersting observation is the line at 82. This probably indicates the playoffs. WHat's intersting the lack of people who play more than 82 games, and that if there is a point total from them, its pretty low.
+```{r}
+ggplot(offmen, aes(gp,p))+
+  geom_point(alpha=0.09) +
+  geom_smooth() +
+  scale_color_brewer(palette = "Dark2")
+
+```
+Now lets get saucy. I want to mix things up. There is a pretty important discrete variable in the skaters dataset. Its called **position**. This is where on the ice a player plays. Easy. Except for one thing. Does position impact the amount of points you garner? Given that some use points as a metric for success (there is literally a trophy for people with the most points), lets explore some metrics for the different positions
+```{r}
+ggplot(skaters, aes(position, p)) +
+  geom_boxplot() 
+
+ggplot(skaters, aes(position, p)) +
+  geom_violin() +
+  labs(title="Violin plot of points for each Forward-Skater", x="Position", y="Points (Assists + Goals)")
+
+```
+So, one thing we can gather from the graph above, is that while playing defense does have a distinct effect on the amount of points you get, playing on the wings doesn't necessarily. This fits in line with common knowledge, but I just wanted an excuse to break out the boxplots.
+
+But hey, why stop there? The party is just getting started. Lets leave the kiddy pool of goals, assists and points and venture into some advanced statistics.
+```{r}
+ggplot(skaters, aes(position, cf)) +
+  geom_boxplot()
+
+ggplot(skaters, aes(position, ca)) +
+  geom_boxplot()
+```
+So some intersting things in the data here. Its clear that defensemen might be expected to contribute more to corsi against, but it seems with this data that defensemen **(also contribute more positively corsi for!)** This may be due to the fact that defensemen **have more time on ice**, and have more **opportunities for shots**. But by that logic, they should have a **lower corsi**, because they're on the ice for **more shots**. So lets look at the relationship between time on ice and corsi.
+```{r}
+ggplot(skaters, aes(toi_pct, cf)) +
+  geom_point(alpha=0.1) +
+  facet_wrap(~ position)
+```
+Now, we are going to get more saucy with exploring correlation between two variables. For now, lets look at the correlation between **corsi for** and **toi_pct**. But lets use a different visualisation technique: **hexagonal binning**. I went with the Vancouver Can
+```{r}
+ggplot(defmen, aes(toi_pct, cf)) +
+  stat_binhex(colour="white") +
+  theme_minimal() +
+  scale_fill_gradient(low="#002D55", high="#008852") +
+  #002D55 - hexdex for Canuck Blue
+  #008852 - hexdex for Canuck Green
+  labs(x="Time on Ice (%)", y="Corsi For", title = "Plot of Corsi For against Time on Ice (%) for Defensemen in the NHL")
+```
+From the above (an indepth look at the second chart of the point charts), we can see some interesting patterns. Specifically, that there is an uneven density in defensemen distribution in this relationship. The advantage to hexbin images is that the density of the data can be more generally seen in patterns. However, the data doesn't appear specific enough, so we can use an alternate presentation model. 
+```{r}
+ggplot(defmen, aes(toi_pct, cf)) +
+  geom_point(alpha=0.1) +
+  theme_bw() +
+  geom_density2d(colour="#008852") +
+  labs(title = "Plot of defensemen of Corsi For against Time on Ice (%)", x="Time on Ice (%)", y="Corsi For")
+```
+Here is another variation of the point plot which we have gradients indicating density of distribution. Whats interesting is how it matches the **hexbin** graph above. However, there is a slightly smaller peak of density in the sub250 corsi zone between 25 and 27.5% TOI. But forget about that, do you notice those four pale dots in the far upper right corner? Those must be some exceptional offensive to have such high team corsi while they are on the ice right? Lets take a more in depth look at them
+```{r}
+excepDefmen <- defmen %>%
+                  filter(cf > 1750)
+eDvar <- c("player","season","team","cf", "toi_pct", "icf", "toi")
+bbzscr <- (1758 - 741.3741995)/417.396809
+print(excepDefmen[eDvar])
+print(bbzscr)
+```
+Whats interesting, is that Brent Burns managed this heroic feat while having a good 5.5% less icetime than his other
+
+So its clear that defensemen are an interesting group of people corsi wise, and deserve follow-up. But thats not the purpose of this excercise. This excercise is for two purposee. **First**, its for me (and anyone who can make sense of my ramblings) to get to grips with R data analysis basics. And **second**, its about presenting the data as it is in the **skaters**.
+Also, didn't I promise some more saucy stuff? Let's start looking at **Corsi, Fenwick, xG, --for %, --relative to teammates, --score adjusted, per 60,** and **time on ice statistics** within the skaters dataset.
+
+First, lets explore corsi values for defensemen. The corsi data we have are **cf**, **ca**, **c_plumin**, **cf_pct**, **rel_cf_pct**, **icf**, **icf_60**, and **cf_pct_qoc**. We have to leave out a few variables (**cf_pct_qot** and **cf_pct_qoc**) because they are a bit finicky, and we'll find other ways to explore them some other time.
+We're gonna start with the separation of corsi related variables so we can apply some functions to all of them at the same time.
+```{r}
+corsiVar <- c("cf", "ca", "c_plumin", "cf_pct", "rel_cf_pct", "icf", "icf_60")
+corsiQual <-c("cf_pct_qot", "cf_pct_qoc")
+corsiVarDefmen <- defmen[corsiVar]
+```
+
+The basic functions that we can apply to the corsiVarDefmen dataset are applied below. We can't really get into more specifics than this, but it gives us a set of variables to explore.
+```{r}
+sapply(corsiVarDefmen, mean)
+sapply(corsiVarDefmen, median)
+sapply(corsiVarDefmen, sd)
+
+
+```
+
+This code is just to clear up the RStudio workspace,
+```{r}
+# Clear environment
+rm(list = ls()) 
+
+# Clear console
+cat("\014")  # ctrl+L
+```
+
+
+
